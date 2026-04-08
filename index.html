@@ -230,8 +230,13 @@ async function fetchBusData(busConfig, targetStop) {
       stopName: targetStop,
       estimates: buses.slice(0, 2)
     };
-  } catch (e) {
-    state.apiError = e.message;
+} catch (e) {
+    // 若是 500 錯誤且資料可能只是空的，顯示友善訊息
+    if (e.message && e.message.includes('500')) {
+      state.apiError = '目前無班次資訊（或交管中）';
+    } else {
+      state.apiError = e.message;
+    }
   } finally {
     state.isLoading = false;
     render();
@@ -240,9 +245,16 @@ async function fetchBusData(busConfig, targetStop) {
 
 function handleStepClick(step) {
   state.activeStepId = step.id;
-  if (step.buses && step.buses.length > 0) {
+  // 有📍標記的步驟才打 API（才是真正在站牌等車）
+  if (step.buses && step.buses.length > 0 && step.text.includes('📍')) {
     state.activeBus = step.buses[0];
     fetchBusData(step.buses[0], step.target);
+  } else if (step.buses && step.buses.length > 0) {
+    // 有公車設定但不在站牌，只更新路線按鈕顯示，不打 API
+    state.activeBus = step.buses[0];
+    state.apiData = null;
+    state.apiError = '';
+    render();
   } else {
     state.activeBus = null;
     state.apiData = null;

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>G哥智能通勤護目鏡</title>
+<script>
+  // 🔧 換成你的 Cloudflare Workers 網址！
+  const WORKER_URL = 'https://bus-proxy.coolzoe977.workers.dev';
+</script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh}
+  .header{background:#1e293b;color:#fff;padding:1rem 1.5rem;display:flex;align-items:center;gap:1rem;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .header-icon{background:#f97316;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+  .header-title{font-size:1.1rem;font-weight:800}
+  .header-sub{font-size:.8rem;color:#f97316;margin-top:2px}
+  .badge{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.4rem .8rem;font-size:.75rem;font-weight:700;color:#60a5fa;margin-left:auto;flex-shrink:0}
+  .container{max-width:1100px;margin:0 auto;padding:1rem;display:grid;grid-template-columns:1fr;gap:1rem}
+  @media(min-width:768px){.container{grid-template-columns:400px 1fr;padding:1.5rem}}
+
+  /* 左側 */
+  .left-panel{display:flex;flex-direction:column;gap:.75rem}
+  .tab-bar{background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:.25rem;display:flex}
+  .tab-btn{flex:1;padding:.65rem;border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .2s;background:transparent;color:#94a3b8}
+  .tab-btn.active{background:#1e293b;color:#fff}
+  .wed-bar{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:.4rem;display:flex;gap:.4rem}
+  .wed-btn{flex:1;padding:.4rem;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;transition:all .2s;background:#fff;color:#b45309;border:1px solid #fde68a}
+  .wed-btn.active{background:#f59e0b;color:#fff;border-color:#f59e0b}
+  .steps-card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:1.25rem;flex:1}
+  .steps-label{font-size:.75rem;font-weight:700;color:#94a3b8;margin-bottom:1rem;letter-spacing:.05em}
+  .step-item{position:relative;display:flex;align-items:flex-start;gap:.75rem;padding:.6rem .75rem;border-radius:10px;border:2px solid transparent;cursor:pointer;transition:all .2s;margin-bottom:.5rem;opacity:.6}
+  .step-item:hover{opacity:.9}
+  .step-item.active{border-color:#3b82f6;background:#eff6ff;opacity:1;transform:scale(1.01)}
+  .step-connector{position:absolute;left:calc(.75rem + 15px);top:calc(.6rem + 30px);width:2px;background:#e2e8f0;bottom:-10px;z-index:0}
+  .step-connector.active{background:#3b82f6}
+  .step-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;flex-shrink:0;background:#e2e8f0;color:#64748b;position:relative;z-index:1}
+  .step-item.active .step-num{background:#3b82f6;color:#fff}
+  .step-time{font-size:1rem;font-weight:800;color:#64748b}
+  .step-item.active .step-time{color:#3b82f6}
+  .step-text{font-size:.85rem;font-weight:600;color:#64748b;margin-top:2px}
+  .step-item.active .step-text{color:#1e293b}
+
+  /* 右側 */
+  .right-panel{display:flex;flex-direction:column}
+  .bus-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;flex:1;display:flex;flex-direction:column}
+  .bus-card-top{background:#1e293b;color:#fff;padding:1.25rem}
+  .bus-hint-label{color:#f97316;font-weight:700;font-size:.8rem;margin-bottom:.4rem;display:flex;align-items:center;gap:.3rem}
+  .bus-hint{font-size:1rem;font-weight:700;line-height:1.5;margin-bottom:1rem}
+  .route-btns{display:flex;gap:.5rem;background:rgba(255,255,255,.1);padding:.3rem;border-radius:10px}
+  .route-btn{flex:1;padding:.6rem;border:1px solid #475569;border-radius:8px;font-weight:800;font-size:1rem;cursor:pointer;transition:all .2s;background:#0f172a;color:#cbd5e1}
+  .route-btn.active{background:#3b82f6;color:#fff;border-color:#3b82f6;transform:scale(1.04)}
+  .bus-card-body{flex:1;padding:1.5rem;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .stop-label{background:#f1f5f9;color:#475569;border-radius:99px;padding:.3rem .9rem;font-size:.8rem;font-weight:700;display:inline-flex;align-items:center;gap:.3rem;margin-bottom:.5rem}
+  .stop-name{font-size:2rem;font-weight:900;text-align:center;color:#1e293b}
+  .route-name{color:#3b82f6;font-weight:700;margin-top:.25rem;text-align:center}
+  .bus-main{width:100%;max-width:320px;margin-top:1.25rem;display:flex;flex-direction:column;gap:.75rem}
+  .bus-first{padding:1.25rem;border-radius:16px;border:2px solid #bfdbfe;background:#fff;position:relative;overflow:hidden}
+  .bus-first.incoming{border-color:#fca5a5;background:#fff1f2}
+  .incoming-badge{position:absolute;top:0;left:0;right:0;background:#ef4444;color:#fff;text-align:center;font-size:.7rem;font-weight:900;letter-spacing:.1em;padding:.2rem;animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  .bus-sublabel{font-size:.75rem;font-weight:700;color:#94a3b8;margin-top:.3rem}
+  .bus-time{font-size:3.5rem;font-weight:900;color:#3b82f6;line-height:1}
+  .bus-first.incoming .bus-time{color:#ef4444}
+  .bus-plate{display:inline-flex;align-items:center;gap:.3rem;background:#f1f5f9;padding:.3rem .7rem;border-radius:7px;font-size:.75rem;font-weight:600;color:#64748b;margin-top:.75rem}
+  .bus-second{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.75rem 1rem;display:flex;align-items:center;gap:.75rem}
+  .bus-second-icon{width:36px;height:36px;background:#f1f5f9;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+  .bus-second-label{font-size:.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}
+  .bus-second-time{font-size:1.1rem;font-weight:800;color:#1e293b}
+  .no-data{text-align:center;background:#f8fafc;border:2px solid #e2e8f0;border-radius:16px;padding:2rem;color:#64748b;font-weight:700}
+  .update-bar{text-align:center;margin-top:.75rem;display:flex;align-items:center;justify-content:center;gap:.75rem}
+  .update-time{font-size:.7rem;font-weight:700;color:#94a3b8}
+  .refresh-btn{background:#eff6ff;color:#3b82f6;border:none;border-radius:99px;padding:.25rem .7rem;font-size:.7rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:.2rem}
+  .refresh-btn:hover{background:#dbeafe}
+  .loading{display:flex;flex-direction:column;align-items:center;gap:.75rem;color:#94a3b8;font-weight:700}
+  .loading-icon{font-size:2rem;animation:spin 1.5s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .error-msg{color:#ef4444;font-weight:700;text-align:center;padding:1rem}
+  
+  /* 保護模式 */
+  .protect-card{background:#1e293b;border-radius:16px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;text-align:center}
+  .protect-icon{width:80px;height:80px;background:#facc15;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:1.25rem}
+  .protect-title{font-size:1.75rem;font-weight:900;color:#fff;margin-bottom:.75rem}
+  .protect-msg{font-size:1rem;color:#cbd5e1;margin-bottom:1.5rem;line-height:1.6}
+  .protect-btn{background:#facc15;color:#1e293b;border:none;border-radius:12px;padding:1rem 2rem;font-size:1.1rem;font-weight:900;cursor:pointer;transition:all .2s}
+  .protect-btn:hover{background:#fde047;transform:scale(1.03)}
+
+  /* 休息日 */
+  .rest-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;gap:1rem}
+  .rest-card{background:#fff;border:2px solid #fed7aa;border-radius:24px;padding:2.5rem;text-align:center;max-width:480px;width:100%}
+  .rest-icon{width:80px;height:80px;background:#fff7ed;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 1.25rem}
+  .rest-title{font-size:1.75rem;font-weight:900;color:#1e293b;margin-bottom:.75rem}
+  .rest-date{font-size:1.1rem;font-weight:700;color:#f97316;margin-bottom:.75rem}
+  .rest-msg{color:#64748b;line-height:1.7}
+  .sim-card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:1.25rem;max-width:480px;width:100%;text-align:center}
+  .sim-label{font-size:.8rem;font-weight:700;color:#64748b;margin-bottom:.75rem;display:flex;align-items:center;justify-content:center;gap:.4rem}
+  .sim-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem}
+  .sim-btn{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:.5rem;font-weight:700;font-size:.8rem;cursor:pointer;transition:all .2s}
+  .sim-btn:hover{background:#3b82f6}
+  .test-banner{background:#fbbf24;color:#1e293b;border-radius:10px;padding:.6rem 1rem;font-weight:700;display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem}
+  .close-btn{background:#1e293b;color:#fff;border:none;border-radius:6px;padding:.2rem .6rem;font-size:.75rem;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ==================== 資料設定 ====================
+const scheduleData = {
+  3: {
+    label: '星期三 (14:50的課)',
+    go: [
+      {id:'g1',time:'13:45',text:'準備下樓，慢慢走',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}]},
+      {id:'g2',time:'13:55',text:'📍 崑山中學站 等車',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}],hint:'死盯著【崑山中學】站！誰先來搭誰！'},
+      {id:'g3',time:'14:20',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'15路',route:'15',dir:0}],hint:'換看 15號！準備無縫接軌！'},
+      {id:'g4',time:'14:30',text:'抵達南臺，準備上課',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:0}]}
+    ],
+    return_A: [
+      {id:'rA1',time:'16:40',text:'老師提早放人！下樓去',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}]},
+      {id:'rA2',time:'16:50',text:'📍 南臺 搭 15路',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}],hint:'上車出發回奇美！'},
+      {id:'rA3',time:'17:15',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}],hint:'雙護法上場！誰快來搭誰！'},
+      {id:'rA4',time:'17:35',text:'回到租屋處吃晚餐',target:'崑山中學',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}]}
+    ],
+    return_B: [
+      {id:'rB1',time:'16:40',text:'人太多，先在學校吹冷氣',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}]},
+      {id:'rB2',time:'17:35',text:'📍 南臺 搭 15路',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}],hint:'差不多囉！準備等車。'},
+      {id:'rB3',time:'17:45',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}],hint:'雙護法上場！準備回租屋處！'},
+      {id:'rB4',time:'18:15',text:'回到租屋處休息',target:'崑山中學',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}]}
+    ]
+  },
+  4: {
+    label: '星期四 (08:10的課)',
+    go: [
+      {id:'g1',time:'06:55',text:'準備下樓，慢慢走',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}]},
+      {id:'g2',time:'07:05',text:'📍 崑山中學站 等車',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}],hint:'早上車多小心安全。'},
+      {id:'g3',time:'07:30',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'15路',route:'15',dir:0}],hint:'準備轉搭 15號！'},
+      {id:'g4',time:'07:40',text:'抵達南臺，買早餐！',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:0}]}
+    ],
+    return: [
+      {id:'r1',time:'10:00',text:'下課！鐘聲響閃人',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}]},
+      {id:'r2',time:'10:10',text:'📍 南臺 搭 15路',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}],hint:'上車吹冷氣囉！'},
+      {id:'r3',time:'10:40',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}],hint:'去對面買杯路易莎等車。'},
+      {id:'r4',time:'11:00',text:'回到租屋處',target:'崑山中學',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}]}
+    ]
+  },
+  5: {
+    label: '星期五 (18:20的課)',
+    go: [
+      {id:'g1',time:'17:05',text:'準備下樓慢慢走',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}]},
+      {id:'g2',time:'17:15',text:'📍 崑山中學站 等車',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}],hint:'死盯著【崑山中學】站！'},
+      {id:'g3',time:'17:50',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'15路',route:'15',dir:0}],hint:'準備轉乘 15號。'},
+      {id:'g4',time:'18:00',text:'抵達南臺，深呼吸！',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:0}]}
+    ],
+    return: [
+      {id:'r1',time:'21:30',text:'下課！直接叫計程車',target:'回家',buses:[],hint:'🚨 保護模式！太晚了別搭公車，直接叫車回家！'}
+    ]
+  },
+  6: {
+    label: '星期六 (09:10的課)',
+    go: [
+      {id:'g1',time:'08:00',text:'準備下樓慢慢走',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}]},
+      {id:'g2',time:'08:10',text:'📍 崑山中學站 等車',target:'崑山中學',buses:[{label:'5路',route:'5',dir:0},{label:'70左',route:'70左'}],hint:'死盯著站牌動態！'},
+      {id:'g3',time:'08:40',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'15路',route:'15',dir:0}],hint:'換看 15號！'},
+      {id:'g4',time:'08:50',text:'抵達南臺，週末加油',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:0}]}
+    ],
+    return: [
+      {id:'r1',time:'18:30',text:'跟教授聊聊天',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}],hint:'最晚 18:50 就要出來看車喔！'},
+      {id:'r2',time:'19:00',text:'📍 南臺 搭 15路',target:'南臺科技大學',buses:[{label:'15路',route:'15',dir:1}]},
+      {id:'r3',time:'19:30',text:'📍 奇美醫院站 轉乘',target:'奇美醫院',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}],hint:'雙護法最後一波！錯過要等很久喔！'},
+      {id:'r4',time:'19:50',text:'買個宵夜回租屋處',target:'崑山中學',buses:[{label:'5路',route:'5',dir:1},{label:'70右',route:'70右'}]}
+    ]
+  }
+};
+
+// ==================== 狀態管理 ====================
+const state = {
+  actualDay: new Date().getDay(),
+  simulatedDay: null,
+  direction: 'go',
+  wedPlan: 'return_A',
+  activeStepId: null,
+  activeBus: null,
+  apiData: null,
+  isLoading: false,
+  apiError: '',
+  currentDayStr: ''
+};
+
+function getEffectiveDay() { return state.simulatedDay !== null ? state.simulatedDay : state.actualDay; }
+function isRestDay(d) { return d === 0 || d === 1 || d === 2; }
+
+// ==================== API 呼叫 ====================
+async function fetchBusData(busConfig, targetStop) {
+  if (!busConfig || !targetStop) return;
+  state.isLoading = true;
+  state.apiError = '';
+  state.apiData = null;
+  render();
+
+  try {
+    const url = `${WORKER_URL}?route=${encodeURIComponent(busConfig.route)}&stop=${encodeURIComponent(targetStop)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`伺服器錯誤 (HTTP ${res.status})`);
+    const raw = await res.json();
+    if (!Array.isArray(raw)) throw new Error(raw.error || '回傳格式錯誤');
+
+    let data = raw;
+    if (busConfig.dir !== undefined) data = raw.filter(i => i.Direction === busConfig.dir);
+
+    const buses = data.map(item => {
+      let text = '', min = null;
+      if      (item.StopStatus === 1) text = '尚未發車';
+      else if (item.StopStatus === 2) text = '交管不停';
+      else if (item.StopStatus === 3) text = '末班已過';
+      else if (item.StopStatus === 4) text = '今日未營運';
+      else if (item.EstimateTime !== undefined) {
+        min = Math.floor(item.EstimateTime / 60);
+        text = min <= 2 ? '即將進站' : `${min} 分鐘`;
+      } else text = '無資料';
+      return { min, text, isIncoming: min !== null && min <= 2, plate: item.PlateNumb || '---' };
+    }).sort((a, b) => {
+      if (a.min !== null && b.min !== null) return a.min - b.min;
+      return a.min !== null ? -1 : 1;
+    });
+
+    state.apiData = {
+      updateTime: new Date().toLocaleTimeString('zh-TW', {hour12:false}),
+      routeName: busConfig.label,
+      stopName: targetStop,
+      estimates: buses.slice(0, 2)
+    };
+  } catch (e) {
+    state.apiError = e.message;
+  } finally {
+    state.isLoading = false;
+    render();
+  }
+}
+
+function handleStepClick(step) {
+  state.activeStepId = step.id;
+  if (step.buses && step.buses.length > 0) {
+    state.activeBus = step.buses[0];
+    fetchBusData(step.buses[0], step.target);
+  } else {
+    state.activeBus = null;
+    state.apiData = null;
+    render();
+  }
+}
+
+function handleBusSwitch(busConfig, target) {
+  state.activeBus = busConfig;
+  fetchBusData(busConfig, target);
+}
+
+// ==================== 渲染 ====================
+function getSteps() {
+  const day = getEffectiveDay();
+  const sched = scheduleData[day];
+  if (!sched) return [];
+  if (state.direction === 'go') return sched.go;
+  if (day === 3) return sched[state.wedPlan];
+  return sched.return;
+}
+
+function render() {
+  const day = getEffectiveDay();
+  const app = document.getElementById('app');
+
+  if (isRestDay(day)) {
+    const dNames = ['日','一','二','三','四','五','六'];
+    const today = new Date();
+    const dayLabel = `${today.toLocaleDateString()} (星期${dNames[state.actualDay]})`;
+    app.innerHTML = `
+      <div class="rest-page">
+        <div class="rest-card">
+          <div class="rest-icon">☕</div>
+          <div class="rest-title">今天不上課，真好！</div>
+          <div class="rest-date">${dayLabel}</div>
+          <div class="rest-msg">妹妹，今天不用跑來跑去，超 chill 的啦！好好待在租屋處休息。全端工程師成就解鎖！</div>
+        </div>
+        <div class="sim-card">
+          <div class="sim-label">⚡ 測試模式</div>
+          <div class="sim-grid">
+            ${[3,4,5,6].map(d=>`<button class="sim-btn" onclick="simDay(${d})">星期${dNames[d]}</button>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const sched = scheduleData[day];
+  const steps = getSteps();
+  const activeStep = steps.find(s => s.id === state.activeStepId) || steps[0];
+  const dNames = ['日','一','二','三','四','五','六'];
+  const today = new Date();
+
+  const stepsHTML = steps.map((step, idx) => {
+    const isActive = state.activeStepId === step.id || (!state.activeStepId && idx === 0);
+    const isLast = idx === steps.length - 1;
+    return `
+      <div class="step-item${isActive?' active':''}" onclick="clickStep(${idx})">
+        ${!isLast ? `<div class="step-connector${isActive?' active':''}"></div>` : ''}
+        <div class="step-num">${idx+1}</div>
+        <div>
+          <div class="step-time">${step.time}</div>
+          <div class="step-text">${step.text}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  let rightHTML = '';
+  if (!activeStep || !activeStep.buses || activeStep.buses.length === 0) {
+    rightHTML = `
+      <div class="protect-card">
+        <div class="protect-icon">⚠️</div>
+        <div class="protect-title">啟動保護模式</div>
+        <div class="protect-msg">${activeStep?.hint || '這個時段太晚了，別折騰公車了！'}</div>
+        <button class="protect-btn" onclick="alert('叫車軟體開起來！平安到家！')">📱 打開叫車軟體</button>
+      </div>`;
+  } else {
+    const routeBtnsHTML = activeStep.buses.length > 1
+      ? `<div class="route-btns">${activeStep.buses.map((b,i)=>`<button class="route-btn${state.activeBus?.label===b.label?' active':''}" onclick="switchBus(${i})">${b.label}</button>`).join('')}</div>`
+      : '';
+
+    let bodyHTML = '';
+    if (state.isLoading) {
+      bodyHTML = `<div class="loading"><div class="loading-icon">🔄</div><div>抓取即時資訊中...</div></div>`;
+    } else if (state.apiError) {
+      bodyHTML = `<div class="error-msg">❌ ${state.apiError}</div>`;
+    } else if (state.apiData) {
+      const e = state.apiData.estimates;
+      const firstHTML = e.length > 0 ? `
+        <div class="bus-first${e[0].isIncoming?' incoming':''}">
+          ${e[0].isIncoming ? '<div class="incoming-badge">即將進站</div>' : ''}
+          <div class="bus-sublabel">最近一班車</div>
+          <div class="bus-time">${e[0].text}</div>
+          <div class="bus-plate">🚌 車牌：${e[0].plate}</div>
+        </div>` : '';
+      const secondHTML = e.length > 1 ? `
+        <div class="bus-second">
+          <div class="bus-second-icon">🕐</div>
+          <div>
+            <div class="bus-second-label">下一班車</div>
+            <div class="bus-second-time">${e[1].text}</div>
+          </div>
+        </div>` : '';
+      const noDataHTML = e.length === 0 ? `<div class="no-data">目前無發車資訊</div>` : '';
+
+      bodyHTML = `
+        <div style="text-align:center">
+          <div class="stop-label">📍 妳正在看的站牌</div>
+          <div class="stop-name">${state.apiData.stopName}</div>
+          <div class="route-name">${state.apiData.routeName}</div>
+        </div>
+        <div class="bus-main">
+          ${firstHTML}${secondHTML}${noDataHTML}
+        </div>
+        <div class="update-bar">
+          <span class="update-time">🕐 ${state.apiData.updateTime}</span>
+          <button class="refresh-btn" onclick="refreshData()">🔄 重整</button>
+        </div>`;
+    }
+
+    rightHTML = `
+      <div class="bus-card">
+        <div class="bus-card-top">
+          <div class="bus-hint-label">⚡ G哥重點提示</div>
+          <div class="bus-hint">${activeStep.hint || '準備搭車囉！'}</div>
+          ${routeBtnsHTML}
+        </div>
+        <div class="bus-card-body">${bodyHTML}</div>
+      </div>`;
+  }
+
+  const wedBarHTML = day === 3 && state.direction === 'return' ? `
+    <div class="wed-bar">
+      <button class="wed-btn${state.wedPlan==='return_A'?' active':''}" onclick="setWedPlan('return_A')">提早放人 (衝刺版)</button>
+      <button class="wed-btn${state.wedPlan==='return_B'?' active':''}" onclick="setWedPlan('return_B')">晚走悠哉 (冷氣版)</button>
+    </div>` : '';
+
+  const bannerHTML = state.simulatedDay !== null ? `
+    <div class="test-banner">
+      <span>⚠️ 測試模式：模擬 ${sched.label.split(' ')[0]}</span>
+      <button class="close-btn" onclick="closeSimulation()">✕ 關閉</button>
+    </div>` : '';
+
+  app.innerHTML = `
+    <header class="header">
+      <div class="header-icon">🚌</div>
+      <div>
+        <div class="header-title">G哥智能通勤護目鏡</div>
+        <div class="header-sub">
+          ${state.simulatedDay !== null ? `模擬 | ${sched.label}` : `${today.toLocaleDateString()} (星期${dNames[state.actualDay]}) | ${sched.label}`}
+        </div>
+      </div>
+      <div class="badge">⚡ Cloudflare 雲端已連線</div>
+    </header>
+
+    <div style="padding:.75rem 1rem 0">
+      ${bannerHTML}
+    </div>
+
+    <div class="container">
+      <div class="left-panel">
+        <div class="tab-bar">
+          <button class="tab-btn${state.direction==='go'?' active':''}" onclick="setDir('go')">出發去學校</button>
+          <button class="tab-btn${state.direction==='return'?' active':''}" onclick="setDir('return')">下課回租屋處</button>
+        </div>
+        ${wedBarHTML}
+        <div class="steps-card">
+          <div class="steps-label">點擊目前步驟 👉</div>
+          ${stepsHTML}
+        </div>
+      </div>
+      <div class="right-panel">${rightHTML}</div>
+    </div>`;
+}
+
+// ==================== 事件處理 ====================
+function setDir(d) {
+  state.direction = d;
+  state.activeStepId = null;
+  state.apiData = null;
+  state.apiError = '';
+  render();
+  const steps = getSteps();
+  if (steps.length > 0) handleStepClick(steps[0]);
+}
+
+function setWedPlan(plan) {
+  state.wedPlan = plan;
+  state.activeStepId = null;
+  render();
+  const steps = getSteps();
+  if (steps.length > 0) handleStepClick(steps[0]);
+}
+
+function clickStep(idx) {
+  const steps = getSteps();
+  if (steps[idx]) handleStepClick(steps[idx]);
+}
+
+function switchBus(idx) {
+  const steps = getSteps();
+  const activeStep = steps.find(s => s.id === state.activeStepId) || steps[0];
+  if (activeStep && activeStep.buses[idx]) handleBusSwitch(activeStep.buses[idx], activeStep.target);
+}
+
+function refreshData() {
+  const steps = getSteps();
+  const activeStep = steps.find(s => s.id === state.activeStepId) || steps[0];
+  if (activeStep && state.activeBus) fetchBusData(state.activeBus, activeStep.target);
+}
+
+function simDay(d) { state.simulatedDay = d; state.activeStepId = null; state.apiData = null; render(); const steps = getSteps(); if (steps.length > 0) handleStepClick(steps[0]); }
+function closeSimulation() { state.simulatedDay = null; state.activeStepId = null; state.apiData = null; render(); }
+
+// ==================== 初始化 ====================
+(function init() {
+  const today = new Date();
+  state.actualDay = today.getDay();
+  render();
+  if (!isRestDay(getEffectiveDay())) {
+    const steps = getSteps();
+    if (steps.length > 0) handleStepClick(steps[0]);
+  }
+})();
+</script>
+</body>
+</html>
